@@ -1,0 +1,23 @@
+{
+    "name": "Simple Server Set - Survival",
+    "projects": [
+        {"id": "EsAfCjCV"},
+        {"id": "aC3cM3Vq"},
+        {"id": "xv94TkTM"},
+        {"id": "fuuu3xnx"},
+        {"id": "2M01OLQq"},
+        {"id":"RLzHAoZe"},
+        {"id":"rIC2XJV4"},
+        {"id":"yXAvIk0x"},
+        {"id":"lU8KbfG2"},
+        {"id":"e0M1UDsY"},
+        {"id":"aru7gAyl"},
+        {"id":"PTj85Anz"}
+    ],
+    "files": [
+        {
+            "path": "config/advancementscreenshot.json5",
+            "content": "{\n\t// If enabled, shows the normal screenshot taken (same as F2) message when a screenshot is taken after an advancement.\n\t\"showScreenshotTakenMessage\": true,\n\t// How many ticks the mod should wait until it takes a screenshot. By default 1 second. 20 ticks = 1 second\n\t// min: 0, max: 100\n\t\"takeScreenshotTickDelay\": 20\n}"
+        }
+    ]
+}

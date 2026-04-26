@@ -1,0 +1,16 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@zip-js/zip-js@^2.8.26": "2.8.26"
+  },
+  "jsr": {
+    "@zip-js/zip-js@2.8.26": {
+      "integrity": "2b78bfa2c5d43766c9a487fc0274981d45732de41bb5b82433d29d235be67191"
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@zip-js/zip-js@^2.8.26"
+    ]
+  }
+}
