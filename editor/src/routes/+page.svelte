@@ -92,7 +92,10 @@
         monetization_status: string
     }
 
-    async function fetchProject(identifier: string) {
+    async function fetchProject(identifier: string, origin: 'base' | 'added' | 'modpack' | 'imported', action: 'ignore' | 'remove' | 'add') {
+        if (seenProjectIdentifiers.has(identifier)) return;
+        seenProjectIdentifiers.add(identifier);
+
         const response = await fetch(`https://api.modrinth.com/v2/project/${identifier}`, {
             method: "GET",
             headers: {
@@ -114,9 +117,10 @@
         const projectData = await response.json();
         const versionData: Array<Version> = await versionsResponse.json();
 
+        seenProjectIdentifiers.add(projectData.id);
         if (!fetchedProjects.some(p => p.id === projectData.id)) {
             fetchedProjects.push(projectData);
-            data.projects.push({ id: projectData.id });
+            data.projects.push({ id: projectData.id, origin, action });
         }
 
         versionData.forEach(v => {
@@ -130,7 +134,7 @@
                 version.dependencies.forEach(dependency => {
                     if (dependency.dependency_type === 'embedded') {
                         console.log(`Project ${projectData.title} has embedded dependency ${dependency.project_id}`);
-                        fetchProject(dependency.project_id!);
+                        fetchProject(dependency.project_id!, 'base', 'ignore');
                     }
                 });
             });
@@ -143,9 +147,10 @@
         id: '1KVo5zza',
         game_version: '26.1.2'
     });
+    let seenProjectIdentifiers: Set<string> = new Set();
     let fetchedProjects: Array<Project> = [];
     let fetchedVersions: Array<Version> = [];
-    let data: { name: string, projects: Array<{ id: string }> } = $state({ name: "Simple Server Set - Base", projects: [] });
+    let data: { name: string, base: string, projects: Array<{ id: string, origin: 'base' | 'added' | 'modpack' | 'imported', action: 'ignore' | 'remove' | 'add' }> } = $state({ name: "Simple Server Set - Base", base: basePack.id, projects: [] });
     let json: string = $derived(JSON.stringify(data, null, 4));
     let currentAddingProjectId: string = $state('');
 </script>
@@ -153,24 +158,49 @@
 <div class="base">
     <input type="text" placeholder="Base ID or Slug" bind:value={basePack.id} />
     <input type="text" placeholder="Game Version" bind:value={basePack.game_version} />
-    <button onclick={() => fetchProject(basePack.id)}>Load Base</button>
+    <input type="text" placeholder="Modpack Name" bind:value={data.name} />
+    <button onclick={() => fetchProject(basePack.id, 'modpack', 'ignore')}>Load Base</button>
+    <button onclick={() => {
+        const json = prompt("Paste your JSON here:");
+        if (!json) return;
+
+        try {
+            const parsed = JSON.parse(json);
+            if (!parsed.projects) {
+                alert("Invalid JSON format. Must contain 'projects' field.");
+                return;
+            }
+
+            data.base = parsed.base;
+            const newProjects = parsed.projects.filter((p: any) => !seenProjectIdentifiers.has(p.id));
+
+            newProjects.forEach((p: any) => fetchProject(p.id, p.origin ?? 'imported', 'add'));
+        } catch (e) {
+            alert("Failed to parse JSON. Please ensure it's valid.");
+            console.error(e);
+        }
+    }}>Import existing JSON</button>
 </div>
 <div class="split">
     <div class="editor">
         <div class="toolbar">
             <input type="text" placeholder="Project ID or Slug" bind:value={currentAddingProjectId} />
-            <button onclick={() => {fetchProject(currentAddingProjectId); currentAddingProjectId = ''}}>Add Project</button>
+            <button onclick={() => {fetchProject(currentAddingProjectId, 'added', 'add'); currentAddingProjectId = ''}}>Add Project</button>
         </div>
         <div class="project-list">
             {#key data.projects.length}
-            {#each data.projects.map(p => ({ ...p, ...fetchedProjects.find(fp => fp.id === p.id) })) as project}
+            {#each data.projects.filter(p => p.origin != 'base').map(p => ({ ...p, ...fetchedProjects.find(fp => fp.id === p.id) })) as project}
                 <div class="project-item">
                     <div>
                         <h3>{project.title}</h3>
                         <p>{project.description}</p>
+                        <small style="color: #ccc;">{project.id} • {project.origin}</small>
                         <div class="actions">
                             <button onclick={() => {
-                                data.projects = data.projects.filter(p => p.id !== project.id);
+                                if (project.origin == 'base') {
+                                    data.projects[data.projects.findIndex(p => p.id === project.id)].action = 'remove';
+                                    data.projects = [...data.projects];
+                                } else data.projects = data.projects.filter(p => p.id !== project.id);
                             }}>Remove</button>
                         </div>
                     </div>
@@ -189,6 +219,15 @@
             on:ready={(event) => console.log(event.detail)}
             bind:value={json}
         />
+        <button onclick={() => {
+            const cleanedData = {
+                name: data.name,
+                base: data.base,
+                projects: data.projects.filter(p => p.action !== 'ignore').map(p => ({ id: p.id, origin: p.origin }))
+            };
+
+            navigator.clipboard.writeText(JSON.stringify(cleanedData, null, 4));
+        }}>Copy</button>
     </div>
 </div>
 
@@ -202,7 +241,7 @@
 
     .split {
         display: flex;
-        height: 100vh;
+        height: 500vh;
     }
 
     .base {
