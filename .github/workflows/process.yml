@@ -44,7 +44,10 @@ jobs:
 
       - name: Run main.ts
         if: steps.check_release.outputs.exists == 'false'
-        run: deno run --allow-net --allow-read --allow-write main.ts
+        env:
+          AUTO_MR_PUBLISH: '1'
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: deno run --allow-net --allow-read --allow-write --allow-env main.ts
 
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
