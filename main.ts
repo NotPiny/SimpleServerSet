@@ -147,7 +147,7 @@ for await (const entry of Deno.readDir(Deno.cwd() + '/mods')) {
 
 	const branch: { name: string, projects: Array<{ id: string }>, files: Array<{ path: string, content: string }> } = JSON.parse(new TextDecoder().decode(await Deno.readFile(`mods/${entry.name}`)));
 
-	const branchIndexFile: IndexFile = baseIndexFile;
+	const branchIndexFile: IndexFile = JSON.parse(JSON.stringify(baseIndexFile));
 	branchIndexFile.name = branch.name;
 
 	for (const project of branch.projects) {
