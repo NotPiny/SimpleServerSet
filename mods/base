@@ -1,5 +1,5 @@
 {
-    "name": "Simple Server Set - Survival",
+    "name": "Simple Server Set - Base",
     "projects": [
         {"id": "EsAfCjCV"},
         {"id": "aC3cM3Vq"},
@@ -12,11 +12,7 @@
         {"id":"lU8KbfG2"},
         {"id":"e0M1UDsY"},
         {"id":"aru7gAyl"},
-        {"id":"PTj85Anz"},
-        {"id":"NcUtCpym"},
-        {"id":"1bokaNcj"},
-        {"id":"Wb5oqrBJ"},
-        {"id":"zV5r3pPn"}
+        {"id":"PTj85Anz"}
     ],
     "files": [
         {
