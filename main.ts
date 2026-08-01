@@ -384,9 +384,10 @@ async function modrinthFetch(url: string, init?: RequestInit): Promise<Response>
 		if (res.status !== 429) return res;
 		const resetIn = res.headers.get('x-ratelimit-reset');
 		const retryAfter = res.headers.get('Retry-After');
-		const wait = resetIn ? parseInt(resetIn, 10) * 1000
+		const headerWait = resetIn ? parseInt(resetIn, 10) * 1000
 			: retryAfter ? parseInt(retryAfter, 10) * 1000
-			: delay;
+			: 0;
+		const wait = Math.max(headerWait, delay);
 		console.warn(`Modrinth rate limited (429) - retrying in ${wait / 1000}s (attempt ${attempt + 1}/${maxRetries})`);
 		await new Promise((resolve) => setTimeout(resolve, wait));
 		delay *= 2;
@@ -449,7 +450,7 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 	if (cached) return cached;
 
 	if (buildingStack.includes(filename)) {
-		throw new Error(`Circular "build:" dependency detected: ${[...buildingStack, filename].join(' -> ')}`);
+		throw new PermanentBuildError(`Circular "build:" dependency detected: ${[...buildingStack, filename].join(' -> ')}`);
 	}
 	buildingStack.push(filename);
 
@@ -567,6 +568,18 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 	await Deno.writeFile(`dist/${filename}.mrpack`, mrpackData);
 	console.log(`[${filename}] Branch zipped to dist/${filename}.mrpack`);
 
+	const modrinthAllowedHosts = new Set(['cdn.modrinth.com', 'github.com', 'raw.githubusercontent.com', 'gitlab.com']);
+	for (const file of branchIndexFile.files) {
+		const disallowed = file.downloads.filter((url) => {
+			try { return !modrinthAllowedHosts.has(new URL(url).hostname); }
+			catch { return true; }
+		});
+		if (disallowed.length > 0) {
+			throw new PermanentBuildError(`[${filename}] File ${file.path} has non-Modrinth-allowed download source(s): ${disallowed.join(', ')} - cannot publish identical pack to Modrinth`);
+		}
+	}
+	const publishMrpackData = mrpackData;
+
 	const versionNumber = `${base.versionNumber}+${filename}`;
 
 	if (autoPublish) {
@@ -591,8 +604,8 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 				};
 				const form = new FormData();
 				form.append('data', JSON.stringify(versionData));
-				form.append('file', new Blob([mrpackData], { type: 'application/zip' }), `${filename}.mrpack`);
-				const res = await fetch('https://api.modrinth.com/v2/version', {
+				form.append('file', new Blob([publishMrpackData], { type: 'application/zip' }), `${filename}.mrpack`);
+				const res = await modrinthFetch('https://api.modrinth.com/v2/version', {
 					method: 'POST',
 					headers: { Authorization: modrinthToken },
 					body: form,
@@ -702,7 +715,44 @@ async function uploadReleaseAsset(uploadUrlTemplate: string, filePath: string): 
 	if (!res.ok) throw new Error(`Failed to upload asset ${name}: ${res.status} ${await res.text()}`);
 }
 
-async function getMissingBaseVersions(): Promise<Array<Version>> {
+class PermanentBuildError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'PermanentBuildError';
+	}
+}
+
+interface FailedBuild {
+	versionId: string
+	versionNumber: string
+	reason: string
+	failedAt: string
+}
+
+const FAILED_BUILDS_PATH = 'failed-builds.json';
+
+async function loadFailedBuilds(): Promise<Map<string, FailedBuild>> {
+	try {
+		const data = JSON.parse(new TextDecoder().decode(await Deno.readFile(FAILED_BUILDS_PATH)));
+		const map = new Map<string, FailedBuild>();
+		for (const entry of data) map.set(entry.versionId, entry);
+		return map;
+	} catch {
+		return new Map();
+	}
+}
+
+async function saveFailedBuild(failedBuilds: Map<string, FailedBuild>, version: Version, reason: string): Promise<void> {
+	failedBuilds.set(version.id, {
+		versionId: version.id,
+		versionNumber: version.version_number,
+		reason,
+		failedAt: new Date().toISOString(),
+	});
+	await Deno.writeFile(FAILED_BUILDS_PATH, new TextEncoder().encode(JSON.stringify([...failedBuilds.values()], null, 2)));
+}
+
+async function getMissingBaseVersions(): Promise<{ missing: Array<Version>, latestId: string }> {
 	const [allVersions, existingTags] = await Promise.all([
 		modrinthFetch(`https://api.modrinth.com/v2/project/${defaultBaseProjectId}/version`).then(async (r) => {
 			if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -711,6 +761,7 @@ async function getMissingBaseVersions(): Promise<Array<Version>> {
 		getExistingReleaseTags(),
 	]);
 	const sorted = [...allVersions].sort((a, b) => new Date(a.date_published).getTime() - new Date(b.date_published).getTime());
+	const latestId = sorted[sorted.length - 1]?.id ?? '';
 
 	const missing: Array<Version> = [];
 	for (const version of sorted) {
@@ -721,36 +772,65 @@ async function getMissingBaseVersions(): Promise<Array<Version>> {
 		}
 		missing.push(version);
 	}
-	return missing;
+	return { missing, latestId };
 }
 
 if (autoGithubRelease) {
 	console.log(`Checking ${defaultBaseProjectId} for versions missing a GitHub release`);
-	const missingVersions = await getMissingBaseVersions();
+	const [{ missing: missingVersions, latestId }, failedBuilds] = await Promise.all([
+		getMissingBaseVersions(),
+		loadFailedBuilds(),
+	]);
 	if (missingVersions.length === 0) {
 		console.log('No missing versions - nothing to build');
 	}
 	for (const version of missingVersions) {
 		const tag = `v${version.version_number}`;
-		console.log(`Building release ${tag} (base modpack version ${version.id})`);
-
-		await cleanBuildState();
-		trackedVersionOverride = version;
-		await runBuildPass();
-		trackedVersionOverride = null;
-
-		const distFiles = await collectDistFiles();
-		if (distFiles.length === 0) {
-			console.warn(`[${tag}] No .mrpack files were produced, skipping release creation`);
+		const isLatest = version.id === latestId;
+		const previousFailure = failedBuilds.get(version.id);
+		if (previousFailure && !isLatest) {
+			console.warn(`Skipping ${tag} - previously failed on ${previousFailure.failedAt}: ${previousFailure.reason}`);
 			continue;
 		}
-
-		console.log(`[${tag}] Creating GitHub release with ${distFiles.length} asset(s)`);
-		const release = await createRelease(tag, tag, `Automated release for base modpack version ${version.version_number}.`);
-		for (const file of distFiles) {
-			await uploadReleaseAsset(release.upload_url, file);
+		if (previousFailure && isLatest) {
+			console.log(`Retrying ${tag} (latest version, ignoring previous failure: ${previousFailure.reason})`);
 		}
-		console.log(`[${tag}] Release published`);
+
+		console.log(`Building release ${tag} (base modpack version ${version.id})`);
+
+		try {
+			await cleanBuildState();
+			trackedVersionOverride = version;
+			await runBuildPass();
+			trackedVersionOverride = null;
+
+			const distFiles = await collectDistFiles();
+			if (distFiles.length === 0) {
+				console.warn(`[${tag}] No .mrpack files were produced, skipping release creation`);
+				await saveFailedBuild(failedBuilds, version, 'No .mrpack files produced');
+				continue;
+			}
+
+			console.log(`[${tag}] Creating GitHub release with ${distFiles.length} asset(s)`);
+			const release = await createRelease(tag, tag, `Automated release for base modpack version ${version.version_number}.`);
+			for (const file of distFiles) {
+				await uploadReleaseAsset(release.upload_url, file);
+			}
+			console.log(`[${tag}] Release published`);
+			if (previousFailure) {
+				failedBuilds.delete(version.id);
+				await Deno.writeFile(FAILED_BUILDS_PATH, new TextEncoder().encode(JSON.stringify([...failedBuilds.values()], null, 2)));
+			}
+		} catch (err) {
+			trackedVersionOverride = null;
+			const reason = (err as Error).message;
+			if (err instanceof PermanentBuildError) {
+				console.error(`[${tag}] Permanent build failure: ${reason}`);
+				await saveFailedBuild(failedBuilds, version, reason);
+			} else {
+				console.error(`[${tag}] Transient build failure (will retry next run): ${reason}`);
+			}
+		}
 	}
 	await cleanBuildState();
 } else {
