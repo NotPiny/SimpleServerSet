@@ -282,6 +282,22 @@ async function removeBaseContent(
 		}
 	}
 	branchIndexFile.files = keptFiles;
+
+	// Remove any override files explicitly listed in removeSet that weren't in the index
+	for (const entry of removeSet) {
+		for (const candidate of [
+			`${processingDir}/overrides/${entry}`,
+			`${processingDir}/${entry}`,
+		]) {
+			try {
+				await Deno.remove(candidate);
+				console.log(`[${branchLabel}] Removed override file: ${entry} (${candidate})`);
+				break;
+			} catch {
+				continue;
+			}
+		}
+	}
 }
 
 async function applyBranchFile(filename: string, file: BranchFile): Promise<void> {
@@ -552,7 +568,8 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 		await applyBranchFile(filename, file);
 	}
 
-	if (!(await Deno.stat(`src/${filename}`).catch(() => null))?.isDirectory) await Deno.mkdir(`src/${filename}`, { recursive: true });
+	await Deno.remove(`src/${filename}`, { recursive: true }).catch(() => {});
+	await Deno.mkdir(`src/${filename}`, { recursive: true });
 	await Deno.writeFile(`.processing/${filename}/modrinth.index.json`, new TextEncoder().encode(JSON.stringify(branchIndexFile, null, 4)));
 	console.log(`[${filename}] Updated index file written`);
 	console.log(`[${filename}] Branch processing complete`);
