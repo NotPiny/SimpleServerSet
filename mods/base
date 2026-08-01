@@ -45,6 +45,7 @@
         }
     ],
     "remove": [
-        "config/modpack_defaults/config/crash_assistant/crash_assistant_localization_overrides/"
+        "config/modpack_defaults/config/crash_assistant/crash_assistant_localization_overrides/",
+        "resourcepacks/Mod Menu Helper.zip"
     ]
 }
