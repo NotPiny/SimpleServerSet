@@ -141,10 +141,14 @@ async function getRemoteBase(config: RemoteBaseConfig): Promise<{ data: Version[
 
 	let data: Version[];
 	if (config.versionId) {
-		const version: Version = await (await fetch(`https://api.modrinth.com/v2/version/${config.versionId}`)).json();
+		const res = await modrinthFetch(`https://api.modrinth.com/v2/version/${config.versionId}`);
+		if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+		const version: Version = await res.json();
 		data = [version];
 	} else {
-		data = await (await fetch(`https://api.modrinth.com/v2/project/${config.projectId}/version`)).json();
+		const res = await modrinthFetch(`https://api.modrinth.com/v2/project/${config.projectId}/version`);
+		if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+		data = await res.json();
 	}
 
 	if (!data || data.length === 0) {
@@ -224,7 +228,9 @@ async function removeBaseContent(
 	for (const identifier of [...removeSet]) {
 		if (identifier.includes('.') || identifier.includes('/')) continue;
 		try {
-			const versions: Version[] = await (await fetch(`https://api.modrinth.com/v2/project/${identifier}/version`)).json();
+			const vRes = await modrinthFetch(`https://api.modrinth.com/v2/project/${identifier}/version`);
+		if (!vRes.ok) throw new Error(`${vRes.status}`);
+		const versions: Version[] = await vRes.json();
 			for (const version of versions) {
 				for (const file of version.files) {
 					removeSet.add(file.filename);
@@ -351,8 +357,45 @@ interface ProjectInfo {
 	loaders: Array<string>
 }
 
+function generateRunId(): string {
+	return Array.from(crypto.getRandomValues(new Uint8Array(4)))
+		.map((b) => b.toString(16).padStart(2, '0'))
+		.join('');
+}
+
+let currentRunId = '';
+
+function modrinthUserAgent(): string {
+	const email = currentRunId ? `simpleserverset+${currentRunId}@sl.piny.dev` : 'simpleserverset@sl.piny.dev';
+	return `NotPiny/SimpleServerSet (${email})`;
+}
+
+async function modrinthFetch(url: string, init?: RequestInit): Promise<Response> {
+	const maxRetries = 5;
+	let delay = 5000;
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		const res = await fetch(url, {
+			...init,
+			headers: {
+				'User-Agent': modrinthUserAgent(),
+				...(init?.headers ?? {}),
+			},
+		});
+		if (res.status !== 429) return res;
+		const resetIn = res.headers.get('x-ratelimit-reset');
+		const retryAfter = res.headers.get('Retry-After');
+		const wait = resetIn ? parseInt(resetIn, 10) * 1000
+			: retryAfter ? parseInt(retryAfter, 10) * 1000
+			: delay;
+		console.warn(`Modrinth rate limited (429) - retrying in ${wait / 1000}s (attempt ${attempt + 1}/${maxRetries})`);
+		await new Promise((resolve) => setTimeout(resolve, wait));
+		delay *= 2;
+	}
+	throw new Error(`Modrinth API rate limit exceeded after ${maxRetries} retries for ${url}`);
+}
+
 async function getProjectInfo(projectId: string): Promise<ProjectInfo> {
-	const res = await fetch(`https://api.modrinth.com/v2/project/${projectId}`);
+	const res = await modrinthFetch(`https://api.modrinth.com/v2/project/${projectId}`);
 	if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
 	return res.json();
 }
@@ -410,6 +453,9 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 	}
 	buildingStack.push(filename);
 
+	const runId = generateRunId();
+	currentRunId = runId;
+	console.log(`[${filename}] Run ID: ${runId}`);
 	console.log(`Creating working directory for ${filename}`);
 
 	const branch = await readBranchConfig(filename);
@@ -465,12 +511,16 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 		const versionQuery = new URLSearchParams();
 		versionQuery.set('loaders', JSON.stringify(targetLoaders));
 		versionQuery.set('game_versions', JSON.stringify(targetGameVersions));
-		const versions: Version[] = await (await fetch(`https://api.modrinth.com/v2/project/${project.id}/version?${versionQuery.toString()}`)).json();
+		const versionsRes = await modrinthFetch(`https://api.modrinth.com/v2/project/${project.id}/version?${versionQuery.toString()}`);
+		if (!versionsRes.ok) throw new Error(`${versionsRes.status} ${await versionsRes.text()}`);
+		const versions: Version[] = await versionsRes.json();
 
 		if (versions.length === 0) {
 			let availableInfo = 'could not fetch project versions to check';
 			try {
-				const allVersions: Version[] = await (await fetch(`https://api.modrinth.com/v2/project/${project.id}/version`)).json();
+				const allVersionsRes = await modrinthFetch(`https://api.modrinth.com/v2/project/${project.id}/version`);
+			if (!allVersionsRes.ok) throw new Error(`${allVersionsRes.status}`);
+			const allVersions: Version[] = await allVersionsRes.json();
 				const availableGameVersions = new Set<string>();
 				const availableLoaders = new Set<string>();
 				for (const v of allVersions) {
@@ -654,7 +704,10 @@ async function uploadReleaseAsset(uploadUrlTemplate: string, filePath: string): 
 
 async function getMissingBaseVersions(): Promise<Array<Version>> {
 	const [allVersions, existingTags] = await Promise.all([
-		(await fetch(`https://api.modrinth.com/v2/project/${defaultBaseProjectId}/version`)).json() as Promise<Array<Version>>,
+		modrinthFetch(`https://api.modrinth.com/v2/project/${defaultBaseProjectId}/version`).then(async (r) => {
+			if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+			return r.json() as Promise<Array<Version>>;
+		}),
 		getExistingReleaseTags(),
 	]);
 	const sorted = [...allVersions].sort((a, b) => new Date(a.date_published).getTime() - new Date(b.date_published).getTime());
