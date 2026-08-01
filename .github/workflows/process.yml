@@ -12,50 +12,19 @@ jobs:
       contents: write
 
     steps:
-      - name: Get latest Modrinth version
-        id: modrinth
-        run: |
-          VERSION=$(curl -sf 'https://api.modrinth.com/v2/project/1KVo5zza/version' \
-            | jq -r '.[0].version_number')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Check for existing release
-        id: check_release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="v${{ steps.modrinth.outputs.version }}"
-          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
       - name: Checkout repository
-        if: steps.check_release.outputs.exists == 'false'
         uses: actions/checkout@v4
 
       - name: Set up Deno
-        if: steps.check_release.outputs.exists == 'false'
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
       - name: Run main.ts
-        if: steps.check_release.outputs.exists == 'false'
         env:
+          AUTO_GITHUB_RELEASE: '1'
           AUTO_MR_PUBLISH: '1'
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: deno run --allow-net --allow-read --allow-write --allow-env main.ts
-
-      - name: Create GitHub Release
-        if: steps.check_release.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ steps.check_release.outputs.tag }}"
-          gh release create "$TAG" dist/*.mrpack \
-            --repo "${{ github.repository }}" \
-            --title "$TAG" \
-            --notes "Automated release for base modpack version ${{ steps.modrinth.outputs.version }}."

@@ -1,79 +1,27 @@
 {
     "name": "Simple Server Set - Survival",
+    "base": { "projectId": "build:base" },
     "projects": [
         {
-            "id": "aC3cM3Vq",
-            "origin": "imported"
-        },
-        {
-            "id": "2M01OLQq",
-            "origin": "imported"
-        },
-        {
-            "id": "EsAfCjCV",
-            "origin": "imported"
-        },
-        {
             "id": "1bokaNcj",
-            "origin": "imported"
-        },
-        {
-            "id": "lU8KbfG2",
-            "origin": "imported"
+            "meta": { "origin": "imported" }
         },
         {
             "id": "zV5r3pPn",
-            "origin": "imported"
-        },
-        {
-            "id": "yXAvIk0x",
-            "origin": "imported"
-        },
-        {
-            "id": "RLzHAoZe",
-            "origin": "imported"
-        },
-        {
-            "id": "aru7gAyl",
-            "origin": "imported"
-        },
-        {
-            "id": "rIC2XJV4",
-            "origin": "imported"
+            "meta": { "origin": "imported" }
         },
         {
             "id": "NcUtCpym",
-            "origin": "imported"
-        },
-        {
-            "id": "e0M1UDsY",
-            "origin": "imported"
+            "meta": { "origin": "imported" }
         },
         {
             "id": "Wb5oqrBJ",
-            "origin": "imported"
-        },
-        {
-            "id": "fuuu3xnx",
-            "origin": "imported"
-        },
-        {
-            "id": "PTj85Anz",
-            "origin": "imported"
-        },
-        {
-            "id": "xv94TkTM",
-            "origin": "imported"
+            "meta": { "origin": "imported" }
         },
         {
             "id": "tFFdBvRj",
-            "origin": "added"
+            "meta": { "origin": "added" }
         }
     ],
-    "files": [
-        {
-            "path": "config/advancementscreenshot.json5",
-            "content": "{\n\t// If enabled, shows the normal screenshot taken (same as F2) message when a screenshot is taken after an advancement.\n\t\"showScreenshotTakenMessage\": true,\n\t// How many ticks the mod should wait until it takes a screenshot. By default 1 second. 20 ticks = 1 second\n\t// min: 0, max: 100\n\t\"takeScreenshotTickDelay\": 20\n}"
-        }
-    ]
+    "files": []
 }
