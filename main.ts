@@ -522,11 +522,10 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 		}
 
 		const typeInfo = getProjectTypeInfo(info?.project_type);
-		const targetLoaders = info?.loaders && info.loaders.length > 0 ? info.loaders : ['fabric'];
 		const targetGameVersions = [base.gameVersion];
 
 		const versionQuery = new URLSearchParams();
-		versionQuery.set('loaders', JSON.stringify(targetLoaders));
+		versionQuery.set('loaders', JSON.stringify(['fabric', 'minecraft', 'iris', 'optifine']));
 		versionQuery.set('game_versions', JSON.stringify(targetGameVersions));
 		const versionsRes = await modrinthFetch(`https://api.modrinth.com/v2/project/${project.id}/version?${versionQuery.toString()}`);
 		if (!versionsRes.ok) throw new Error(`${versionsRes.status} ${await versionsRes.text()}`);
@@ -548,7 +547,7 @@ async function buildBranch(filename: string): Promise<BuildResult> {
 			} catch {
 				// ignore
 			}
-			console.warn(`[${filename}] No versions found for ${project.id} (target game_versions=[${targetGameVersions.join(', ')}], loaders=[${targetLoaders.join(', ')}]) - available: ${availableInfo}, skipping`);
+			console.warn(`[${filename}] No versions found for ${project.id} (target game_versions=[${targetGameVersions.join(', ')}] - available: ${availableInfo}, skipping`);
 			continue;
 		}
 		console.log(`[${filename}] Found ${versions.length} versions for ${project.id} - latest is ${versions[0].id}`);
