@@ -1,0 +1,22 @@
+{
+    "name": "Simple Server Set - Development",
+    "base": { "projectId": "build:base" },
+    "projects": [
+        {
+            "id": "PRy8Khga"
+        },
+        {
+            "id": "8shC1gFX"
+        },
+        {
+            "id": "KsOce7sT"
+        },
+        {
+            "id": "NimDX7iQ"
+        },
+        {
+            "id": "FFDotM4D"
+        }
+    ],
+    "files": []
+}
